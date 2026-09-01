@@ -1,47 +1,67 @@
 # Viking
 
-Use AI to select the best meals from Kuchnia Vikinga
+A Python 3.14 CLI for inspecting Kuchnia Vikinga deliveries and using OpenAI
+to choose meals. Viking API responses and OpenAI selections are validated with
+Pydantic before they are used.
 
-## Development
+## Setup
 
-Enter the reproducible development environment:
+Enter the uv2nix development shell:
 
 ```sh
 nix develop
 ```
 
-Inspect the CLI with either toolchain:
+Authenticated commands read credentials from the environment. `auto-select`
+also uses the standard OpenAI SDK environment variable:
 
 ```sh
-uv run viking --help
-nix run -- --help
+export VIKING_USERNAME='you@example.com'
+export VIKING_PASSWORD='your-viking-password'
+export OPENAI_API_KEY='your-openai-api-key'
 ```
 
-Send a request to a public Viking API endpoint:
+The API URL defaults to `https://panel.kuchniavikinga.pl/api`; override it with
+`VIKING_API_URL`. The OpenAI model defaults to `gpt-5.6`; override it with
+`OPENAI_MODEL` or `--model`.
+
+## Commands
+
+Run the application through Nix by placing its arguments after `--`:
 
 ```sh
-uv run viking request /panel/open/cities/top-10
+# Today, one day, an inclusive range, or every available delivery day
+nix run . -- show
+nix run . -- show 2026-09-03
+nix run . -- show 2026-09-03 --to 2026-09-07
+nix run . -- show --all
+
+# Options for a meal. Accepted meal names are breakfast, second-breakfast
+# (also 2nd-breakfast), dinner, tea, and supper.
+nix run . -- show-options 2026-09-03 dinner
+
+# Select immediately, or inspect the proposed changes first
+nix run . -- auto-select 2026-09-03
+nix run . -- auto-select 2026-09-03 --to 2026-09-07 --dry-run
+nix run . -- auto-select --all --dry-run
 ```
 
-The API defaults to `https://panel.kuchniavikinga.pl/api`. Override it with
-`VIKING_API_URL` or `--base-url`. Use `--method` and `--data` for requests with
-a JSON body:
+Dates without a delivery and meals that cannot be changed are reported and
+skipped. AI-provided IDs are checked against the current API options before a
+selection request is sent. The editable system prompt is the `SYSTEM_PROMPT`
+constant in `src/viking/selector.py`.
+
+The low-level request command remains available for API exploration:
 
 ```sh
-uv run viking request /endpoint --method POST --data '{"key":"value"}'
+nix run . -- request /panel/open/cities/top-10
+nix run . -- request /endpoint --method POST --data '{"key":"value"}'
 ```
 
-The panel's authenticated endpoints use its login session. Login and persistent
-session handling have been mapped but are not implemented in the CLI yet.
+## Development
 
-JSON responses are validated with Pydantic before they are printed. Add
-endpoint-specific models in `src/viking/models.py` as the API contract becomes
-available.
-
-Add dependencies with `uv add <package>` and commit the updated
-`pyproject.toml` and `uv.lock` files.
-
-Run the test suite with:
+Add dependencies with `uv add <package>` and commit both `pyproject.toml` and
+`uv.lock`. Run tests with:
 
 ```sh
 uv run pytest

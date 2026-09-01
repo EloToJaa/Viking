@@ -125,11 +125,12 @@ def _auto_select_delivery(
         if not meal.switchable:
             typer.echo(f"{selected_day}: {meal.meal_name} cannot be changed")
             continue
-        options = [
-            option
-            for option in client.switch_options(order_id, delivery_id, meal.delivery_meal_id).meal_change_options
-            if option.can_be_changed
-        ]
+        try:
+            switch_options = client.switch_options(order_id, delivery_id, meal.delivery_meal_id)
+        except VikingApiError as error:
+            typer.echo(f"{selected_day}: {meal.meal_name} cannot be chosen: {error}")
+            continue
+        options = [option for option in switch_options.meal_change_options if option.can_be_changed]
         if not options:
             typer.echo(f"{selected_day}: {meal.meal_name} has no available options")
             continue
@@ -158,9 +159,13 @@ def _auto_select_delivery(
         option = options[choice.diet_calories_meal_id]
         action = "would select" if dry_run else "selected"
         if not dry_run:
-            client.select_meal(
-                order_id, delivery_id, choice.delivery_meal_id, choice.diet_calories_meal_id
-            )
+            try:
+                client.select_meal(
+                    order_id, delivery_id, choice.delivery_meal_id, choice.diet_calories_meal_id
+                )
+            except VikingApiError as error:
+                typer.echo(f"{selected_day}: could not select {option.menu_meal_details.menu_meal_name}: {error}")
+                continue
         typer.echo(f"{selected_day}: {action} {option.menu_meal_details.menu_meal_name} — {choice.reason}")
     for current, _options in candidates:
         if current.delivery_meal_id in selected_meals:
@@ -194,7 +199,10 @@ def _authenticated_client() -> VikingClient:
     if not username or not password:
         _fail("Set VIKING_USERNAME and VIKING_PASSWORD to use authenticated commands.")
     client = VikingClient(base_url=os.getenv("VIKING_API_URL", DEFAULT_API_URL))
-    client.login(username, password)
+    try:
+        client.login(username, password)
+    except VikingApiError as error:
+        _fail(str(error))
     return client
 
 
