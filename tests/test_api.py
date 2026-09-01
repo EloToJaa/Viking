@@ -28,11 +28,38 @@ def test_request_sends_auth_and_returns_json() -> None:
         "https://example.test/api/menu",
         headers={
             "Accept": "application/json",
+            "company-id": "kuchniavikinga",
+            "x-launcher-type": "BROWSER_PANEL",
             "Authorization": "Bearer secret",
         },
         params={"date": "2026-09-02"},
         json=None,
+        data=None,
         timeout=5,
+    )
+
+
+def test_login_uses_form_data_and_keeps_session_cookies() -> None:
+    session = Mock(spec=requests.Session)
+    response = Mock(spec=requests.Response)
+    response.content = b""
+    session.request.return_value = response
+
+    VikingClient(session=session).login("user@example.com", "secret")
+
+    session.request.assert_called_once_with(
+        "POST",
+        "https://panel.kuchniavikinga.pl/api/auth/login",
+        headers={
+            "Accept": "application/json",
+            "company-id": "kuchniavikinga",
+            "x-launcher-type": "BROWSER_PANEL",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        params=None,
+        json=None,
+        data={"username": "user@example.com", "password": "secret"},
+        timeout=30.0,
     )
 
 
