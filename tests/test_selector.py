@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -26,7 +27,8 @@ def test_selector_uses_structured_output_and_system_prompt() -> None:
                 "menuMealName": "New meal",
                 "dietCaloriesMealId": 20,
                 "mealName": "OBIAD",
-            }
+            },
+            "reviewSummary": {"score": 4.6, "number": 27},
         }
     )
 
@@ -38,3 +40,6 @@ def test_selector_uses_structured_output_and_system_prompt() -> None:
     assert call["instructions"] == SYSTEM_PROMPT
     assert call["text_format"] is DaySelection
     assert call["store"] is False
+    sent_options = json.loads(call["input"].split("\n", maxsplit=1)[1])[0]["options"]
+    assert sent_options[0]["reviewPercentage"] == 92
+    assert sent_options[0]["reviewCount"] == 27

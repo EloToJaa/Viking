@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from viking.api import DEFAULT_API_URL, DEFAULT_TIMEOUT, VikingApiError, VikingClient
 from viking.domain import load_schedule, meal_matches, requested_days
-from viking.models import MealOption, Nutrition, SelectedMeal
+from viking.models import MealOption, Nutrition, ReviewSummary, SelectedMeal
 from viking.selector import MealSelector
 
 app = typer.Typer(help="Inspect and select Kuchnia Vikinga meals.", no_args_is_help=True)
@@ -191,6 +191,7 @@ def _print_options(
         summary = _nutrition_summary(details.nutrition)
         if summary:
             typer.echo(f"    {summary}")
+        typer.secho(f"    {_review_summary(option.review_summary)}", fg="bright_black")
 
 
 def _authenticated_client() -> VikingClient:
@@ -245,6 +246,13 @@ def _nutrition_summary(nutrition: Nutrition | None) -> str:
         if value is not None:
             values.append(f"{value:g} {label}")
     return " · ".join(values)
+
+
+def _review_summary(review: ReviewSummary | None) -> str:
+    if review is None or review.number == 0:
+        return "No reviews"
+    noun = "review" if review.number == 1 else "reviews"
+    return f"Reviews: {review.percentage:.0f}% · {review.number} {noun}"
 
 
 def _print_day(selected_day: date, meals: list[SelectedMeal]) -> None:

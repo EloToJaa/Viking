@@ -83,11 +83,24 @@ class MealOptionDetails(ApiModel):
     allergens: list[str] = Field(default_factory=list)
 
 
+class ReviewSummary(ApiModel):
+    score: float
+    number: int
+
+    @property
+    def percentage(self) -> float:
+        if self.score <= 1:
+            return self.score * 100
+        if self.score <= 5:
+            return self.score / 5 * 100
+        return self.score
+
+
 class MealOption(ApiModel):
     menu_meal_details: MealOptionDetails
     can_be_changed: bool = True
     meal_recommended: bool = False
-    review_summary: dict[str, Any] | None = None
+    review_summary: ReviewSummary | None = None
 
 
 class SwitchOptions(ApiModel):
