@@ -4,7 +4,8 @@ from unittest.mock import Mock, patch
 from typer.testing import CliRunner
 
 from viking.cli import _auto_select_delivery, app
-from viking.models import DaySelection, DeliveryMenu, MealOption, SelectedMeal
+from viking.domain import ScheduledDelivery
+from viking.models import DaySelection, Delivery, DeliveryMenu, MealOption, SelectedMeal
 
 runner = CliRunner()
 
@@ -41,6 +42,46 @@ def test_request_command_rejects_invalid_query() -> None:
 
     assert result.exit_code == 2
     assert "Query parameter must be KEY=VALUE" in result.output
+
+
+@patch("viking.cli.load_schedule")
+@patch("viking.cli._authenticated_client")
+def test_show_formats_meals_and_daily_nutrition_total(
+    authenticated_client: Mock, load_schedule: Mock
+) -> None:
+    client = authenticated_client.return_value
+    delivery = Delivery.model_validate({"deliveryId": 46, "date": "2026-09-03"})
+    load_schedule.return_value = {
+        date(2026, 9, 3): [ScheduledDelivery(order_id=34, delivery=delivery)]
+    }
+    client.delivery_menu.return_value = DeliveryMenu.model_validate(
+        {
+            "deliveryMenuMeal": [
+                {
+                    "deliveryMealId": 10,
+                    "dietCaloriesMealId": 20,
+                    "mealName": "OBIAD",
+                    "menuMealName": "Kurczak z ryżem",
+                    "amount": 2,
+                    "nutrition": {
+                        "calories": 450,
+                        "protein": 30,
+                        "fat": 10,
+                        "carbohydrate": 55,
+                    },
+                }
+            ]
+        }
+    )
+
+    result = runner.invoke(app, ["show", "2026-09-03"], color=True)
+
+    assert result.exit_code == 0
+    assert "Thursday, 03 September 2026" in result.stdout
+    assert "Kurczak z ryżem" in result.stdout
+    assert "Daily total" in result.stdout
+    assert "900 kcal · 60 g protein · 20 g fat · 110 g carbs" in result.stdout
+    assert "\x1b[" in result.stdout
 
 
 def test_auto_select_rejects_unoffered_ai_id() -> None:

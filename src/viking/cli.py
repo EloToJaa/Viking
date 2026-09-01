@@ -43,13 +43,13 @@ def show(
         for selected_day in requested_days(schedule, start, end, all_days):
             deliveries = schedule.get(selected_day, [])
             if not deliveries:
-                typer.echo(f"{selected_day}: unavailable")
+                typer.secho(f"\n{selected_day}: unavailable", fg="yellow", bold=True)
                 continue
+            meals: list[SelectedMeal] = []
             for scheduled in deliveries:
                 menu = client.delivery_menu(scheduled.delivery.delivery_id)
-                typer.echo(str(selected_day))
-                for meal in menu.delivery_menu_meal:
-                    typer.echo(f"  {meal.meal_name}: {meal.menu_meal_name}{_nutrition_summary(meal.nutrition)}")
+                meals.extend(menu.delivery_menu_meal)
+            _print_day(selected_day, meals)
     except VikingApiError as error:
         _fail(str(error))
 
@@ -187,10 +187,10 @@ def _print_options(
     for option in options:
         details = option.menu_meal_details
         marker = " recommended" if option.meal_recommended else ""
-        typer.echo(
-            f"  {details.diet_calories_meal_id}: {details.menu_meal_name}"
-            f"{marker}{_nutrition_summary(details.nutrition)}"
-        )
+        typer.echo(f"  {details.diet_calories_meal_id}: {details.menu_meal_name}{marker}")
+        summary = _nutrition_summary(details.nutrition)
+        if summary:
+            typer.echo(f"    {summary}")
 
 
 def _authenticated_client() -> VikingClient:
@@ -237,14 +237,46 @@ def _parse_meal(value: str) -> str:
 def _nutrition_summary(nutrition: Nutrition | None) -> str:
     if nutrition is None:
         return ""
-    values = []
+    values: list[str] = []
     for label, value in (
-        ("kcal", nutrition.calories), ("protein", nutrition.protein),
-        ("fat", nutrition.fat), ("carbs", nutrition.carbohydrate),
+        ("kcal", nutrition.calories), ("g protein", nutrition.protein),
+        ("g fat", nutrition.fat), ("g carbs", nutrition.carbohydrate),
     ):
         if value is not None:
-            values.append(f"{label}={value:g}")
-    return f" ({', '.join(values)})" if values else ""
+            values.append(f"{value:g} {label}")
+    return " · ".join(values)
+
+
+def _print_day(selected_day: date, meals: list[SelectedMeal]) -> None:
+    typer.secho(f"\n{selected_day:%A, %d %B %Y}", fg="cyan", bold=True)
+    typer.secho("─" * 56, fg="bright_black")
+    if not meals:
+        typer.secho("  No selected meals", fg="yellow")
+        return
+    for meal in meals:
+        amount = f" ×{meal.amount}" if meal.amount != 1 else ""
+        typer.secho(f"{meal.meal_name}{amount}", fg="yellow", bold=True)
+        typer.secho(f"  {meal.menu_meal_name}", fg="green")
+        summary = _nutrition_summary(meal.nutrition)
+        if summary:
+            typer.secho(f"  {summary}", fg="bright_black")
+    typer.secho("Daily total", fg="magenta", bold=True)
+    summary = _nutrition_summary(_daily_nutrition(meals))
+    typer.secho(f"  {summary or 'nutrition unavailable'}", bold=True)
+
+
+def _daily_nutrition(meals: list[SelectedMeal]) -> Nutrition:
+    totals: dict[str, float | None] = {}
+    for field in ("calories", "protein", "fat", "carbohydrate"):
+        values = [
+            getattr(meal.nutrition, field) if meal.nutrition is not None else None
+            for meal in meals
+        ]
+        if any(value is None for value in values):
+            totals[field] = None
+            continue
+        totals[field] = sum(value * meal.amount for value, meal in zip(values, meals, strict=True))
+    return Nutrition.model_validate(totals)
 
 
 @app.command("request")
