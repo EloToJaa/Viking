@@ -1,0 +1,26 @@
+[project]
+name = "viking"
+version = "0.1.0"
+description = "Use AI to select the best meals from Kuchnia Vikinga"
+readme = "README.md"
+authors = [
+    { name = "EloToJaa", email = "elotoja@protonmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.13.5",
+    "requests>=2.34.2",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+viking = "viking.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
