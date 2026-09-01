@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
 from typer.testing import CliRunner
 
-from viking.cli import _auto_select_delivery, _review_summary, app
+from viking.api import VikingApiError
+from viking.cli import _auto_select_delivery, _auto_selection_days, _review_summary, app
 from viking.domain import ScheduledDelivery
 from viking.models import (
     DaySelection,
@@ -56,6 +57,113 @@ def test_review_summary_converts_five_point_score_to_percentage() -> None:
 
     assert _review_summary(review) == "Reviews: 92% · 27 reviews"
     assert _review_summary(None) == "No reviews"
+
+
+def test_default_auto_selection_starts_three_days_from_today() -> None:
+    first = date.today() + timedelta(days=3)
+    schedule = {
+        first - timedelta(days=1): [],
+        first: [],
+        first + timedelta(days=2): [],
+    }
+
+    assert _auto_selection_days(schedule, None, None, False) == [
+        first,
+        first + timedelta(days=2),
+    ]
+
+
+@patch("viking.cli.MealSelector")
+@patch("viking.cli.load_schedule")
+@patch("viking.cli._authenticated_client")
+def test_auto_select_does_not_call_openai_when_preflight_fails(
+    authenticated_client: Mock, load_schedule: Mock, selector_type: Mock
+) -> None:
+    client = authenticated_client.return_value
+    delivery = Delivery.model_validate({"deliveryId": 46, "date": "2026-09-03"})
+    load_schedule.return_value = {
+        date(2026, 9, 3): [ScheduledDelivery(order_id=34, delivery=delivery)]
+    }
+    client.delivery_menu.return_value = DeliveryMenu.model_validate(
+        {
+            "deliveryMenuMeal": [
+                {
+                    "deliveryMealId": 10,
+                    "dietCaloriesMealId": 19,
+                    "mealName": "OBIAD",
+                    "menuMealName": "Current",
+                    "switchable": True,
+                }
+            ]
+        }
+    )
+    client.switch_options.side_effect = VikingApiError("endpoint failed", status_code=500)
+
+    result = runner.invoke(app, ["auto-select", "2026-09-03"])
+
+    assert result.exit_code == 1
+    assert "Preflight failed; OpenAI was not called" in result.output
+    selector_type.assert_not_called()
+
+
+@patch("viking.cli.MealSelector")
+@patch("viking.cli.load_schedule")
+@patch("viking.cli._authenticated_client")
+def test_auto_select_stops_at_first_unpublished_menu(
+    authenticated_client: Mock, load_schedule: Mock, selector_type: Mock
+) -> None:
+    client = authenticated_client.return_value
+    first = Delivery.model_validate({"deliveryId": 46, "date": "2026-09-03"})
+    unpublished = Delivery.model_validate({"deliveryId": 47, "date": "2026-09-04"})
+    load_schedule.return_value = {
+        date(2026, 9, 3): [ScheduledDelivery(order_id=34, delivery=first)],
+        date(2026, 9, 4): [ScheduledDelivery(order_id=34, delivery=unpublished)],
+    }
+    current = SelectedMeal.model_validate(
+        {
+            "deliveryMealId": 10,
+            "dietCaloriesMealId": 19,
+            "mealName": "OBIAD",
+            "menuMealName": "Current",
+            "switchable": True,
+        }
+    )
+    client.delivery_menu.side_effect = [
+        DeliveryMenu(delivery_menu_meal=[current]),
+        VikingApiError("not found", status_code=404),
+    ]
+    option = MealOption.model_validate(
+        {
+            "menuMealDetails": {
+                "menuMealId": 2,
+                "menuMealName": "Offered",
+                "dietCaloriesMealId": 20,
+                "mealName": "OBIAD",
+            }
+        }
+    )
+    client.switch_options.return_value.meal_change_options = [option]
+    selector_type.return_value.select.return_value = DaySelection.model_validate(
+        {
+            "choices": [
+                {
+                    "delivery_meal_id": 10,
+                    "diet_calories_meal_id": 20,
+                    "reason": "Best option",
+                }
+            ]
+        }
+    )
+
+    result = runner.invoke(
+        app,
+        ["auto-select", "2026-09-03", "--to", "2026-09-04", "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert "2026-09-04: menu is not available yet; stopping" in result.output
+    assert "2026-09-03: would select Offered" in result.output
+    selector_type.assert_called_once()
 
 
 @patch("viking.cli.load_schedule")

@@ -73,8 +73,10 @@ def test_request_turns_http_error_into_domain_error() -> None:
     session.request.return_value = response
     client = VikingClient(session=session)
 
-    with pytest.raises(VikingApiError, match="HTTP 401: invalid token"):
+    with pytest.raises(VikingApiError, match="HTTP 401: invalid token") as raised:
         client.request("GET", "/menu")
+
+    assert raised.value.status_code == 401
 
 
 def test_request_rejects_non_json_compatible_response() -> None:

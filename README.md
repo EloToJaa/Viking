@@ -51,6 +51,12 @@ skipped. AI-provided IDs are checked against the current API options before a
 selection request is sent. The editable system prompt is the `SYSTEM_PROMPT`
 constant in `src/viking/selector.py`.
 
+With no explicit date, `auto-select` starts three days from today and processes
+future deliveries until it reaches the first menu that has not been published.
+Before OpenAI is called, the CLI preflights the active-order, delivery-menu, and
+switch-option endpoints for the whole selection window. Any unexpected Viking
+API failure aborts the run before an OpenAI request or meal change is made.
+
 The low-level request command remains available for API exploration:
 
 ```sh

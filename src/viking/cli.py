@@ -1,6 +1,7 @@
 import json
 import os
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import Annotated, Any
 
@@ -14,6 +15,14 @@ from viking.models import MealOption, Nutrition, ReviewSummary, SelectedMeal
 from viking.selector import DEFAULT_OPENAI_MODEL, MealSelector
 
 app = typer.Typer(help="Inspect and select Kuchnia Vikinga meals.", no_args_is_help=True)
+
+
+@dataclass(frozen=True)
+class PreparedDelivery:
+    day: date
+    order_id: int
+    delivery_id: int
+    candidates: list[tuple[SelectedMeal, list[MealOption]]]
 
 
 class HttpMethod(StrEnum):
@@ -85,9 +94,18 @@ def show_options(
 
 @app.command("auto-select")
 def auto_select(
-    day: Annotated[str | None, typer.Argument(help="Start date (YYYY-MM-DD); defaults to today.")] = None,
+    day: Annotated[
+        str | None,
+        typer.Argument(help="Start date (YYYY-MM-DD); defaults to three days from today."),
+    ] = None,
     to: Annotated[str | None, typer.Option("--to", help="Inclusive end date (YYYY-MM-DD).")] = None,
-    all_days: Annotated[bool, typer.Option("--all", help="Process every available delivery day.")] = False,
+    all_days: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            help="Process future delivery days, starting three days from today.",
+        ),
+    ] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Choose and print without changing meals.")] = False,
     model: Annotated[
         str, typer.Option("--model", envvar="OPENAI_MODEL", help="OpenAI model.")
@@ -97,20 +115,43 @@ def auto_select(
     start, end = _date_selection(day, to, all_days)
     client = _authenticated_client()
     try:
-        selector = MealSelector(model=model)
         schedule = load_schedule(client)
-        for selected_day in requested_days(schedule, start, end, all_days):
+        prepared: list[PreparedDelivery] = []
+        menu_boundary_reached = False
+        for selected_day in _auto_selection_days(schedule, start, end, all_days):
             deliveries = schedule.get(selected_day, [])
             if not deliveries:
                 typer.echo(f"{selected_day}: unavailable")
                 continue
+            day_items: list[PreparedDelivery] = []
             for scheduled in deliveries:
-                _auto_select_delivery(
-                    client, selector, scheduled.order_id, scheduled.delivery.delivery_id,
-                    selected_day, dry_run,
-                )
-    except (VikingApiError, OpenAIError, RuntimeError) as error:
-        _fail(str(error))
+                try:
+                    item = _prepare_delivery(
+                        client, scheduled.order_id, scheduled.delivery.delivery_id, selected_day
+                    )
+                except VikingApiError as error:
+                    if error.status_code != 404:
+                        raise
+                    typer.echo(f"{selected_day}: menu is not available yet; stopping")
+                    menu_boundary_reached = True
+                    break
+                if item.candidates:
+                    day_items.append(item)
+            if menu_boundary_reached:
+                break
+            prepared.extend(day_items)
+        if not prepared:
+            typer.echo("No selectable meals were found; OpenAI was not called.")
+            return
+    except VikingApiError as error:
+        _fail(f"Preflight failed; OpenAI was not called: {error}")
+
+    try:
+        selector = MealSelector(model=model)
+        for item in prepared:
+            _apply_selection(client, selector, item, dry_run)
+    except (OpenAIError, RuntimeError) as error:
+        _fail(f"OpenAI selection failed: {error}")
 
 
 def _auto_select_delivery(
@@ -121,17 +162,25 @@ def _auto_select_delivery(
     selected_day: date,
     dry_run: bool,
 ) -> None:
+    prepared = _prepare_delivery(client, order_id, delivery_id, selected_day)
+    if not prepared.candidates:
+        return
+    _apply_selection(client, selector, prepared, dry_run)
+
+
+def _prepare_delivery(
+    client: VikingClient,
+    order_id: int,
+    delivery_id: int,
+    selected_day: date,
+) -> PreparedDelivery:
     menu = client.delivery_menu(delivery_id)
     candidates: list[tuple[SelectedMeal, list[MealOption]]] = []
     for meal in menu.delivery_menu_meal:
         if not meal.switchable:
             typer.echo(f"{selected_day}: {meal.meal_name} cannot be changed")
             continue
-        try:
-            switch_options = client.switch_options(order_id, delivery_id, meal.delivery_meal_id)
-        except VikingApiError as error:
-            typer.echo(f"{selected_day}: {meal.meal_name} cannot be chosen: {error}")
-            continue
+        switch_options = client.switch_options(order_id, delivery_id, meal.delivery_meal_id)
         options = [option for option in switch_options.meal_change_options if option.can_be_changed]
         if not options:
             typer.echo(f"{selected_day}: {meal.meal_name} has no available options")
@@ -139,23 +188,30 @@ def _auto_select_delivery(
         candidates.append((meal, options))
     if not candidates:
         typer.echo(f"{selected_day}: no meals can be selected")
-        return
+    return PreparedDelivery(selected_day, order_id, delivery_id, candidates)
 
-    selection = selector.select(selected_day.isoformat(), candidates)
+
+def _apply_selection(
+    client: VikingClient,
+    selector: MealSelector,
+    prepared: PreparedDelivery,
+    dry_run: bool,
+) -> None:
+    selection = selector.select(prepared.day.isoformat(), prepared.candidates)
     offered = {
         current.delivery_meal_id: {
             option.menu_meal_details.diet_calories_meal_id: option for option in options
         }
-        for current, options in candidates
+        for current, options in prepared.candidates
     }
     selected_meals: set[int] = set()
     for choice in selection.choices:
         options = offered.get(choice.delivery_meal_id)
         if options is None or choice.diet_calories_meal_id not in options:
-            typer.echo(f"{selected_day}: OpenAI returned an invalid choice for meal {choice.delivery_meal_id}")
+            typer.echo(f"{prepared.day}: OpenAI returned an invalid choice for meal {choice.delivery_meal_id}")
             continue
         if choice.delivery_meal_id in selected_meals:
-            typer.echo(f"{selected_day}: OpenAI returned a duplicate choice for meal {choice.delivery_meal_id}")
+            typer.echo(f"{prepared.day}: OpenAI returned a duplicate choice for meal {choice.delivery_meal_id}")
             continue
         selected_meals.add(choice.delivery_meal_id)
         option = options[choice.diet_calories_meal_id]
@@ -163,16 +219,31 @@ def _auto_select_delivery(
         if not dry_run:
             try:
                 client.select_meal(
-                    order_id, delivery_id, choice.delivery_meal_id, choice.diet_calories_meal_id
+                    prepared.order_id,
+                    prepared.delivery_id,
+                    choice.delivery_meal_id,
+                    choice.diet_calories_meal_id,
                 )
             except VikingApiError as error:
-                typer.echo(f"{selected_day}: could not select {option.menu_meal_details.menu_meal_name}: {error}")
+                typer.echo(f"{prepared.day}: could not select {option.menu_meal_details.menu_meal_name}: {error}")
                 continue
-        typer.echo(f"{selected_day}: {action} {option.menu_meal_details.menu_meal_name} — {choice.reason}")
-    for current, _options in candidates:
+        typer.echo(f"{prepared.day}: {action} {option.menu_meal_details.menu_meal_name} — {choice.reason}")
+    for current, _options in prepared.candidates:
         if current.delivery_meal_id in selected_meals:
             continue
-        typer.echo(f"{selected_day}: OpenAI did not choose {current.meal_name}")
+        typer.echo(f"{prepared.day}: OpenAI did not choose {current.meal_name}")
+
+
+def _auto_selection_days(
+    schedule: dict[date, list[Any]],
+    start: date | None,
+    end: date | None,
+    _all_days: bool,
+) -> list[date]:
+    if start is not None:
+        return requested_days(schedule, start, end, False)
+    first = date.today() + timedelta(days=3)
+    return [day for day in sorted(schedule) if day >= first]
 
 
 def _print_options(

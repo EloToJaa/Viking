@@ -13,6 +13,10 @@ ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 class VikingApiError(RuntimeError):
     """Raised when a request to the Viking API fails."""
 
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class VikingClient:
     def __init__(
@@ -52,7 +56,10 @@ class VikingClient:
             response = error.response
             status = response.status_code if response is not None else "unknown"
             detail = _response_error_detail(response)
-            raise VikingApiError(f"Viking API returned HTTP {status}: {detail}") from error
+            raise VikingApiError(
+                f"Viking API returned HTTP {status}: {detail}",
+                response.status_code if response is not None else None,
+            ) from error
         except requests.RequestException as error:
             raise VikingApiError(f"Could not reach the Viking API: {error}") from error
 
