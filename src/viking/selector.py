@@ -6,6 +6,8 @@ from openai import OpenAI
 
 from viking.models import DaySelection, MealOption, SelectedMeal
 
+DEFAULT_OPENAI_MODEL = "gpt-5-nano"
+
 # Intentionally kept here as a plain constant so it is easy to tune.
 SYSTEM_PROMPT = """
 Wybierz posiłki dla użytkownika. Zasady:
@@ -18,7 +20,9 @@ Wybieraj posiłki tylko z wybranych opcji. Pamiętaj, żeby krótko opisać swoj
 
 
 class MealSelector:
-    def __init__(self, model: str = "gpt-5.6", client: OpenAI | None = None) -> None:
+    def __init__(
+        self, model: str = DEFAULT_OPENAI_MODEL, client: OpenAI | None = None
+    ) -> None:
         self.model = model
         self.client = client or OpenAI()
 

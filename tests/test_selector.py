@@ -3,7 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from viking.models import DaySelection, MealOption, SelectedMeal
-from viking.selector import MealSelector, SYSTEM_PROMPT
+from viking.selector import DEFAULT_OPENAI_MODEL, MealSelector, SYSTEM_PROMPT
+
+
+def test_cheap_model_is_the_default() -> None:
+    assert DEFAULT_OPENAI_MODEL == "gpt-5-nano"
 
 
 def test_selector_uses_structured_output_and_system_prompt() -> None:

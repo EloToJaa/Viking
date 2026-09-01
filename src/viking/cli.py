@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from viking.api import DEFAULT_API_URL, DEFAULT_TIMEOUT, VikingApiError, VikingClient
 from viking.domain import load_schedule, meal_matches, requested_days
 from viking.models import MealOption, Nutrition, ReviewSummary, SelectedMeal
-from viking.selector import MealSelector
+from viking.selector import DEFAULT_OPENAI_MODEL, MealSelector
 
 app = typer.Typer(help="Inspect and select Kuchnia Vikinga meals.", no_args_is_help=True)
 
@@ -89,7 +89,9 @@ def auto_select(
     to: Annotated[str | None, typer.Option("--to", help="Inclusive end date (YYYY-MM-DD).")] = None,
     all_days: Annotated[bool, typer.Option("--all", help="Process every available delivery day.")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Choose and print without changing meals.")] = False,
-    model: Annotated[str, typer.Option("--model", envvar="OPENAI_MODEL", help="OpenAI model.")] = "gpt-5.6",
+    model: Annotated[
+        str, typer.Option("--model", envvar="OPENAI_MODEL", help="OpenAI model.")
+    ] = DEFAULT_OPENAI_MODEL,
 ) -> None:
     """Ask OpenAI to choose the best offered meals and apply the choices."""
     start, end = _date_selection(day, to, all_days)

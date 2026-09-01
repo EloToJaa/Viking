@@ -22,7 +22,7 @@ export OPENAI_API_KEY='your-openai-api-key'
 ```
 
 The API URL defaults to `https://panel.kuchniavikinga.pl/api`; override it with
-`VIKING_API_URL`. The OpenAI model defaults to `gpt-5.6`; override it with
+`VIKING_API_URL`. The OpenAI model defaults to the inexpensive `gpt-5-nano`; override it with
 `OPENAI_MODEL` or `--model`.
 
 ## Commands
