@@ -8,13 +8,12 @@ from viking.models import DaySelection, MealOption, SelectedMeal
 
 # Intentionally kept here as a plain constant so it is easy to tune.
 SYSTEM_PROMPT = """
-You choose the best available Kuchnia Vikinga meal for the user. Prefer a
-balanced menu with plenty of protein and fiber, reasonable calories, and lower
-amounts of sugar, salt, and saturated fat. Consider ingredients, allergens,
-ratings, and the existing selection. Choose exactly one offered option for
-each meal. Treat a high review percentage backed by more reviews as stronger
-evidence than the same percentage backed by very few reviews. Never invent
-IDs. Briefly explain every choice.
+Wybierz posiłki dla użytkownika. Zasady:
+- W tygodniu poniedziałek - piątek na drugie śniadanie wybierz zawsze shake, sok lub podobne
+- Na śniadanie zawsze wybieraj najwyżej oceniony (procent) słodki posiłek np. naleśniki, jogurt, czekolada
+- Na wszystkie pozostałe posiłki wybierz najlepiej ocenione posiłki (procent -> lista ocen)
+
+Wybieraj posiłki tylko z wybranych opcji. Pamiętaj, żeby krótko opisać swoje wybory.
 """.strip()
 
 
