@@ -132,10 +132,15 @@ def test_show_options_prints_review_percentage_and_count(
         )
     ]
 
-    result = runner.invoke(app, ["show-options", "2026-09-03", "dinner"])
+    result = runner.invoke(app, ["show-options", "2026-09-03", "dinner"], color=True)
 
     assert result.exit_code == 0
+    assert "OBIAD OPTIONS" in result.stdout
+    assert "Currently selected" in result.stdout
+    assert "Available options" in result.stdout
+    assert "1. Offered" in result.stdout
     assert "Reviews: 92% · 27 reviews" in result.stdout
+    assert "\x1b[" in result.stdout
 
 
 def test_auto_select_rejects_unoffered_ai_id() -> None:

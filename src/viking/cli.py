@@ -176,22 +176,30 @@ def _auto_select_delivery(
 def _print_options(
     client: VikingClient, order_id: int, delivery_id: int, meal: SelectedMeal
 ) -> None:
-    typer.echo(f"{meal.meal_name} (currently: {meal.menu_meal_name})")
+    typer.secho(f"\n{meal.meal_name} OPTIONS", fg="cyan", bold=True)
+    typer.secho("─" * 56, fg="bright_black")
+    typer.secho("Currently selected", fg="magenta", bold=True)
+    typer.secho(f"  {meal.menu_meal_name}", fg="green")
     if not meal.switchable:
-        typer.echo("  cannot be changed")
+        typer.secho("\nThis meal cannot be changed.", fg="yellow", bold=True)
         return
     options = client.switch_options(order_id, delivery_id, meal.delivery_meal_id).meal_change_options
     if not options:
-        typer.echo("  no available options")
+        typer.secho("\nNo available options.", fg="yellow", bold=True)
         return
-    for option in options:
+    typer.secho("\nAvailable options", fg="magenta", bold=True)
+    for index, option in enumerate(options, start=1):
         details = option.menu_meal_details
-        marker = " recommended" if option.meal_recommended else ""
-        typer.echo(f"  {details.diet_calories_meal_id}: {details.menu_meal_name}{marker}")
+        typer.secho(f"\n{index}. {details.menu_meal_name}", fg="yellow", bold=True)
+        typer.secho(
+            f"   Selection ID: {details.diet_calories_meal_id}", fg="bright_black"
+        )
+        if option.meal_recommended:
+            typer.secho("   ★ Recommended", fg="green", bold=True)
         summary = _nutrition_summary(details.nutrition)
         if summary:
-            typer.echo(f"    {summary}")
-        typer.secho(f"    {_review_summary(option.review_summary)}", fg="bright_black")
+            typer.secho(f"   {summary}", fg="bright_black")
+        typer.secho(f"   {_review_summary(option.review_summary)}", fg="bright_black")
 
 
 def _authenticated_client() -> VikingClient:
